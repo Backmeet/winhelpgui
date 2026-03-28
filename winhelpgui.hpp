@@ -19,6 +19,12 @@
 #endif
 
 namespace winhelpgui {
+    enum class Align {
+        TopLeft, Top, TopRight,
+        MiddleLeft, Middle, MiddleRight,
+        BottomLeft, Bottom, BottomRight
+    };
+
     struct UIElement {
         winhelp::vec2 pos;
         winhelp::vec2 size;
@@ -53,6 +59,357 @@ namespace winhelpgui {
     typedef std::function<void(UIElement&)> callBackFunction;
     typedef std::vector<std::unique_ptr<UIElement>> UIElementList; 
 
+    struct EditableTextUI : public UIElement {
+        std::string text;
+        winhelp::vec3 text_color;
+        winhelp::Font font;
+
+        unsigned int font_size;
+        unsigned int line_spacing = 15;
+
+        Align align = Align::TopLeft;
+
+        bool focused = false;
+        bool inputEnabled = true;
+        bool selectionEnabled = true;
+
+        size_t caret = 0;
+        size_t select_start = 0;
+        size_t select_end = 0;
+
+        bool caret_visible = true;
+        std::chrono::steady_clock::time_point lastBlink;
+
+        EditableTextUI(
+            std::string text,
+            winhelp::vec2 pos,
+            winhelp::vec2 size,
+            winhelp::vec3 text_color,
+            unsigned int font_size,
+            Align align = Align::TopLeft
+        )
+        : UIElement(pos, size),
+        text(text),
+        text_color(text_color),
+        font_size(font_size),
+        align(align),
+        font(font_size)
+        {
+            caret = text.size();
+            lastBlink = std::chrono::steady_clock::now();
+        }
+
+        FORCE_INLINE std::vector<std::string> split_words(const std::string& str) {
+            std::vector<std::string> words;
+            std::string current;
+
+            for (char c : str) {
+                if (c == ' ') {
+                    if (!current.empty()) {
+                        words.push_back(current);
+                        current.clear();
+                    }
+                } else {
+                    current += c;
+                }
+            }
+
+            if (!current.empty()) words.push_back(current);
+            return words;
+        }
+
+        FORCE_INLINE std::vector<std::string> wrap_lines() {
+            std::vector<std::string> words = split_words(text);
+            std::vector<std::string> lines;
+
+            std::string current;
+
+            for (auto& word : words) {
+                std::string test = current.empty() ? word : current + " " + word;
+
+                if (font.sizeOf(test).x < (int)std::max(0.0f, size.x - 10)) {
+                    current = test;
+                } else {
+                    lines.push_back(current);
+                    current = word + " ";
+                }
+            }
+
+            if (!current.empty()) lines.push_back(current);
+            return lines;
+        }
+
+        FORCE_INLINE winhelp::vec2 compute_start(const std::vector<std::string>& lines) {
+            float total_height = 0;
+
+            for (size_t i = 0; i < lines.size(); ++i) {
+                total_height += font.lineHeight;
+                if (i + 1 < lines.size()) total_height += line_spacing;
+            }
+
+            float y = 0;
+
+            switch (align) {
+                case Align::TopLeft:
+                case Align::Top:
+                case Align::TopRight:
+                    y = 5;
+                    break;
+
+                case Align::MiddleLeft:
+                case Align::Middle:
+                case Align::MiddleRight:
+                    y = (size.y - total_height) * 0.5f;
+                    break;
+
+                case Align::BottomLeft:
+                case Align::Bottom:
+                case Align::BottomRight:
+                    y = size.y - total_height - 5;
+                    break;
+            }
+
+            return {0, y};
+        }
+
+        FORCE_INLINE float compute_x(const std::string& line) {
+            float line_width = font.sizeOf(line).x;
+
+            switch (align) {
+                case Align::TopLeft:
+                case Align::MiddleLeft:
+                case Align::BottomLeft:
+                    return 5;
+
+                case Align::Top:
+                case Align::Middle:
+                case Align::Bottom:
+                    return (size.x - line_width) * 0.5f;
+
+                case Align::TopRight:
+                case Align::MiddleRight:
+                case Align::BottomRight:
+                    return size.x - line_width - 5;
+            }
+
+            return 5;
+        }
+
+        FORCE_INLINE void erase_selection() {
+            if (select_start == select_end) return;
+
+            size_t a = std::min(select_start, select_end);
+            size_t b = std::max(select_start, select_end);
+
+            text.erase(a, b - a);
+            caret = a;
+
+            select_start = select_end = caret;
+        }
+
+        FORCE_INLINE void insert_char(char c) {
+            erase_selection();
+            text.insert(text.begin() + caret, c);
+            caret++;
+            select_start = select_end = caret;
+        }
+
+        FORCE_INLINE void backspace() {
+            if (select_start != select_end) {
+                erase_selection();
+                return;
+            }
+
+            if (caret == 0) return;
+
+            text.erase(text.begin() + caret - 1);
+            caret--;
+
+            select_start = select_end = caret;
+        }
+
+        FORCE_INLINE float caret_pixel() {
+            std::string left = text.substr(0, caret);
+            return font.sizeOf(left).x;
+        }
+
+        FORCE_INLINE void render_selection(winhelp::Surface& screen) {
+            if (select_start == select_end) return;
+
+            size_t a = std::min(select_start, select_end);
+            size_t b = std::max(select_start, select_end);
+
+            std::string left = text.substr(0, a);
+            std::string mid = text.substr(a, b - a);
+
+            float x = compute_x(text.substr(0, caret));
+            float x1 = font.sizeOf(left).x;
+            float w = font.sizeOf(mid).x;
+
+            auto lines = wrap_lines();
+            winhelp::vec2 start = compute_start(lines);
+
+            winhelp::draw::rect(
+                screen,
+                pos + winhelp::vec2{5 + x1, start.y},
+                {w, (float)font.lineHeight},
+                {80,120,255}
+            );
+        }
+
+        FORCE_INLINE void render_text(winhelp::Surface& screen) {
+            std::vector<std::string> lines = wrap_lines();
+
+            winhelp::vec2 start = compute_start(lines);
+            float y = start.y;
+
+            for (auto& line : lines) {
+                if ((y + font.lineHeight) > (size.y - 5)) break;
+
+                float x = compute_x(line);
+
+                winhelp::Surface surf = font.render(line, text_color, {0,0,0,0});
+                screen.blit(pos + winhelp::vec2{x, y}, surf);
+
+                y += font.lineHeight + line_spacing;
+            }
+        }
+
+        FORCE_INLINE void render_caret(winhelp::Surface& screen) {
+            if (!focused || !caret_visible) return;
+
+            std::vector<std::string> lines = wrap_lines();
+            winhelp::vec2 start = compute_start(lines);
+
+            float x = caret_pixel();
+
+            winhelp::draw::rect(
+                screen,
+                pos + winhelp::vec2{5 + x, start.y},
+                {1,(float)font.lineHeight},
+                text_color
+            );
+        }
+
+        void update_blink() {
+            auto now = std::chrono::steady_clock::now();
+
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastBlink).count() > 500) {
+                caret_visible = !caret_visible;
+                lastBlink = now;
+            }
+        }
+
+        virtual void render(winhelp::Surface& screen) {
+            render_selection(screen);
+            render_text(screen);
+            render_caret(screen);
+        }
+
+        void tick(winhelp::Surface& screen,
+            const std::vector<winhelp::events::event>& events,
+            winhelp::vec2 mouse_pos = winhelp::mouse()) override
+        {
+            if (!visible) return;
+
+            for (auto& e : events) {
+
+                if (e.type == winhelp::events::eventTypes::mouse_down &&
+                    e.click == winhelp::events::mouse::left)
+                {
+                    if (contains(mouse_pos)) {
+                        focused = true;
+
+                        float local = mouse_pos.x - pos.x - 5;
+
+                        size_t best = 0;
+                        float bestDist = 1e9;
+
+                        for (size_t i=0;i<=text.size();i++) {
+                            float x = font.sizeOf(text.substr(0,i)).x;
+                            float d = std::abs(x - local);
+
+                            if (d < bestDist) {
+                                bestDist = d;
+                                best = i;
+                            }
+                        }
+
+                        caret = best;
+                        select_start = select_end = caret;
+                    } else {
+                        focused = false;
+                    }
+                }
+
+                if (!focused || !inputEnabled) continue;
+
+                if (e.type == winhelp::events::eventTypes::key_down) {
+
+                    if (e.key == winhelp::events::key::Backspace)
+                        backspace();
+
+                    if (e.key == winhelp::events::key::Left && caret > 0)
+                        caret--;
+
+                    if (e.key == winhelp::events::key::Right && caret < text.size())
+                        caret++;
+
+                    if (e.key == winhelp::events::key::Escape)
+                        focused = false;
+                }
+                if (e.type == winhelp::events::eventTypes::charin && e.KeyAsChar >= 32 && e.KeyAsChar <= 126)
+                    insert_char((char)e.KeyAsChar);
+            }
+
+            update_blink();
+            render(screen);
+        }
+
+        void fitToSize() { fitToSize(1, 200); }
+        void fitToSizeMin(unsigned int min_size) { fitToSize(min_size, 200); }
+        void fitToSizeMax(unsigned int max_size) { fitToSize(1, max_size); }
+
+        void fitToSize(unsigned int min_size, unsigned int max_size) {
+            int low = (int)min_size;
+            int high = (int)max_size;
+
+            unsigned int best = min_size;
+
+            while (low <= high) {
+                int mid = low + (high - low) / 2;
+                font.setSize(mid);
+
+                std::vector<std::string> lines = wrap_lines();
+
+                int total_height = 5;
+
+                for (auto& l : lines)
+                    total_height += font.lineHeight + line_spacing;
+
+                bool fits_height = total_height <= size.y;
+                bool fits_width = true;
+
+                for (auto& l : lines) {
+                    if (font.sizeOf(l).x > (int)std::max(0.0f, size.x - 10)) {
+                        fits_width = false;
+                        break;
+                    }
+                }
+
+                if (fits_height && fits_width) {
+                    best = mid;
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            font_size = best;
+            font.setSize(best);
+        }
+    };
+
     struct TextUI : public UIElement {
         std::string text;
         winhelp::vec3 text_color;
@@ -60,12 +417,6 @@ namespace winhelpgui {
 
         unsigned int font_size;
         unsigned int line_spacing = 5;
-
-        enum class Align {
-            TopLeft, Top, TopRight,
-            MiddleLeft, Middle, MiddleRight,
-            BottomLeft, Bottom, BottomRight
-        };
 
         Align align = Align::TopLeft;
 
@@ -412,7 +763,7 @@ namespace winhelpgui {
 
     struct TextButton : public TextUI, public InteractUI {
         winhelp::vec3 background;
-        winhelp::vec3 border;
+        std::optional<winhelp::vec3> border;
         int border_size;
 
         TextButton(
@@ -420,9 +771,9 @@ namespace winhelpgui {
             winhelp::vec2 pos,
             winhelp::vec2 size,
             winhelp::vec3 bg,
-            winhelp::vec3 border,
             winhelp::vec3 text_color,
-            unsigned int font_size,
+            unsigned int font_size = 20,
+            std::optional<winhelp::vec3> border = std::nullopt,
             int border_size = 2
         )
         : TextUI(text, pos, size, text_color, font_size),
@@ -431,14 +782,17 @@ namespace winhelpgui {
 
         void render(winhelp::Surface& screen) override {
             winhelp::draw::rect(screen, pos, size, background);
-            winhelp::draw::rect(screen, pos, size, border, false, (float)border_size);
+            
+            if (border != std::nullopt) {
+                winhelp::draw::rect(screen, pos, size, border.value(), false, (float)border_size);
+            }
 
             render_text(screen);
         }
 
         void tick(winhelp::Surface& screen,
                 const std::vector<winhelp::events::event>& events,
-                winhelp::vec2 mouse_pos) override {
+                winhelp::vec2 mouse_pos = winhelp::mouse()) override {
             if (!visible) return;
             render(screen);
             interact(*this, events, mouse_pos);
@@ -471,23 +825,23 @@ namespace winhelpgui {
         }
     };
 
-    struct Keypad : public ContainerUI {
-        struct KeyItem {
+    struct LayoutBox : public ContainerUI {
+        struct Item {
             std::unique_ptr<UIElement> button;
             std::optional<winhelp::vec2> override_pos;
         };
 
-        using Layout = std::vector<std::vector<KeyItem>>;
+        using Layout = std::vector<std::vector<Item>>;
 
-        TextUI::Align padAlignment;
+        Align padAlignment;
         int padding;
         std::vector<std::vector<UIElement*>> raw_grid;
 
-        Keypad(
+        LayoutBox(
             winhelp::vec2 pos,
             winhelp::vec2 size,
             Layout layout,
-            TextUI::Align padAlignment,
+            Align padAlignment,
             int padding
         )
         : ContainerUI(pos, size), padAlignment(padAlignment), padding(padding)
@@ -495,11 +849,11 @@ namespace winhelpgui {
             build_auto_size(std::move(layout));
         }
 
-        Keypad(
+        LayoutBox(
             winhelp::vec2 pos,
             winhelp::vec2 size,
             Layout layout,
-            TextUI::Align padAlignment,
+            Align padAlignment,
             int padding,
             int buttonsize
         )
@@ -514,26 +868,26 @@ namespace winhelpgui {
             float x = 0, y = 0;
 
             switch (padAlignment) {
-                case TextUI::Align::TopLeft: break;
-                case TextUI::Align::Top: x = (size.x - total.x) * 0.5f; break;
-                case TextUI::Align::TopRight: x = size.x - total.x; break;
+                case Align::TopLeft: break;
+                case Align::Top: x = (size.x - total.x) * 0.5f; break;
+                case Align::TopRight: x = size.x - total.x; break;
 
-                case TextUI::Align::MiddleLeft: y = (size.y - total.y) * 0.5f; break;
-                case TextUI::Align::Middle:
+                case Align::MiddleLeft: y = (size.y - total.y) * 0.5f; break;
+                case Align::Middle:
                     x = (size.x - total.x) * 0.5f;
                     y = (size.y - total.y) * 0.5f;
                     break;
-                case TextUI::Align::MiddleRight:
+                case Align::MiddleRight:
                     x = size.x - total.x;
                     y = (size.y - total.y) * 0.5f;
                     break;
 
-                case TextUI::Align::BottomLeft: y = size.y - total.y; break;
-                case TextUI::Align::Bottom:
+                case Align::BottomLeft: y = size.y - total.y; break;
+                case Align::Bottom:
                     x = (size.x - total.x) * 0.5f;
                     y = size.y - total.y;
                     break;
-                case TextUI::Align::BottomRight:
+                case Align::BottomRight:
                     x = size.x - total.x;
                     y = size.y - total.y;
                     break;
@@ -657,6 +1011,33 @@ namespace winhelpgui {
         }
     };
 
+    struct TextInputBox : public EditableTextUI {
+        winhelp::vec3 background;
+        std::optional<winhelp::vec3> border;
+
+        TextInputBox(
+            std::string text,
+            winhelp::vec2 pos,
+            winhelp::vec2 size,
+            winhelp::vec3 bg,
+            winhelp::vec3 text_color,
+            unsigned int font_size
+        )
+            : EditableTextUI(text,pos,size,text_color,font_size),
+            background(bg)
+        {}
+
+        void render(winhelp::Surface& screen) override {
+
+            winhelp::draw::rect(screen,pos,size,background);
+
+            if (border) {
+                winhelp::draw::rect(screen,pos,size,*border,false,2);
+            }
+
+            EditableTextUI::render(screen);
+        }
+    };
 }
 
 #undef FORCE_INLINE

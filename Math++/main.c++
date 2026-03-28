@@ -129,8 +129,8 @@ void keypadTextButtonPress(winhelpgui::UIElement& _self) {
 
 int main() {
 
-    using KeyItem = winhelpgui::Keypad::KeyItem;
-    using Row = std::vector<KeyItem>;
+    using Item = winhelpgui::LayoutBox::Item;
+    using Row = std::vector<Item>;
     using Layout = std::vector<Row>;
 
     Layout layout;
@@ -141,9 +141,9 @@ int main() {
             winhelp::vec2{0,0},
             winhelp::vec2{50,50},
             winhelp::vec3{25,25,25},
-            winhelp::vec3{0,0,0},
             winhelp::vec3{255,255,255},
             20,
+            winhelp::vec3{0,0,0},
             2
         );
 
@@ -155,58 +155,58 @@ int main() {
 
     {
         Row row;
-        row.push_back(KeyItem{ make_btn("C"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("AC"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("("), std::nullopt });
-        row.push_back(KeyItem{ make_btn(")"), std::nullopt });
+        row.push_back(Item{ make_btn("C"), std::nullopt });
+        row.push_back(Item{ make_btn("AC"), std::nullopt });
+        row.push_back(Item{ make_btn("("), std::nullopt });
+        row.push_back(Item{ make_btn(")"), std::nullopt });
         layout.push_back(std::move(row));
     }
 
     {
         Row row;
-        row.push_back(KeyItem{ make_btn("1"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("2"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("3"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("+"), std::nullopt });
+        row.push_back(Item{ make_btn("1"), std::nullopt });
+        row.push_back(Item{ make_btn("2"), std::nullopt });
+        row.push_back(Item{ make_btn("3"), std::nullopt });
+        row.push_back(Item{ make_btn("+"), std::nullopt });
         layout.push_back(std::move(row));
     }
 
     {
         Row row;
-        row.push_back(KeyItem{ make_btn("4"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("5"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("6"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("-"), std::nullopt });
+        row.push_back(Item{ make_btn("4"), std::nullopt });
+        row.push_back(Item{ make_btn("5"), std::nullopt });
+        row.push_back(Item{ make_btn("6"), std::nullopt });
+        row.push_back(Item{ make_btn("-"), std::nullopt });
         layout.push_back(std::move(row));
     }
 
     {
         Row row;
-        row.push_back(KeyItem{ make_btn("7"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("8"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("9"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("*"), std::nullopt });
+        row.push_back(Item{ make_btn("7"), std::nullopt });
+        row.push_back(Item{ make_btn("8"), std::nullopt });
+        row.push_back(Item{ make_btn("9"), std::nullopt });
+        row.push_back(Item{ make_btn("*"), std::nullopt });
         layout.push_back(std::move(row));
     }
 
     {
         Row row;
-        row.push_back(KeyItem{ make_btn("0"), std::nullopt });
-        row.push_back(KeyItem{ make_btn("."), std::nullopt });
-        row.push_back(KeyItem{ make_btn("="), std::nullopt });
-        row.push_back(KeyItem{ make_btn("/"), std::nullopt });
+        row.push_back(Item{ make_btn("0"), std::nullopt });
+        row.push_back(Item{ make_btn("."), std::nullopt });
+        row.push_back(Item{ make_btn("="), std::nullopt });
+        row.push_back(Item{ make_btn("/"), std::nullopt });
         layout.push_back(std::move(row));
     }
 
-    winhelpgui::Keypad keypad(
+    winhelpgui::LayoutBox keypad(
         {ResultBufferSpace, ((ResultBufferSpace*2) + ResultSize.y)},
         {ResultSize.x, (size.y - (ResultBufferSpace * 7) - ResultSize.y)},
         std::move(layout),
-        winhelpgui::TextUI::Align::Middle,
+        winhelpgui::Align::Middle,
         10
     );
 
-    result.align = winhelpgui::TextUI::Align::MiddleRight;
+    result.align = winhelpgui::Align::MiddleRight;
     result.fitToSizeMax(40);
 
     update_display();
